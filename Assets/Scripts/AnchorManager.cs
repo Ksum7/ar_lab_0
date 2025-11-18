@@ -1,17 +1,16 @@
 using System.Collections.Generic;
 using UnityEngine;
 using ARLocation;
-using UnityEngine.InputSystem;
 using System;
-using UnityEngine.XR.ARFoundation; // Для ARAnchor
-using UnityEngine.XR.ARSubsystems; // Для Pose (если нужно, но теперь не используется)
+using UnityEngine.Events;
+using UnityEngine.InputSystem;
 
 [System.Serializable]
 public class AnchorData
 {
     public double latitude;
     public double longitude;
-    public double altitude;
+    public float altitude = 0f; // Игнорируем raw GPS altitude
     public string name;
     public long timestamp;
 }
@@ -21,52 +20,64 @@ public class SerializableList { public List<AnchorData> list = new List<AnchorDa
 
 public class AnchorManager : MonoBehaviour
 {
+    [Header("Settings")]
     public GameObject anchorPrefab;
     public int maxSavedAnchors = 10;
+    public float defaultSmoothing = 0.1f;
+
     private List<AnchorData> anchors = new List<AnchorData>();
     private PlaceAtLocation.PlaceAtOptions defaultOptions;
+    private ARLocationProvider locationProvider;
 
     void Start()
     {
-        defaultOptions = new PlaceAtLocation.PlaceAtOptions
+        locationProvider = ARLocationProvider.Instance;
+        if (locationProvider == null)
         {
-            HideObjectUntilItIsPlaced = true,
-            MaxNumberOfLocationUpdates = 1,
-            MovementSmoothing = 0.1f,
-            UseMovingAverage = true,
-        };
-
-        LoadAnchors();
-        Debug.Log($"[AnchorManager] Start: Загружено {anchors.Count} сохранённых меток.");
-        SpawnSavedAnchors();
-        Debug.Log($"[AnchorManager] Start: Спавн завершён. Всего активных: {transform.root.GetComponentsInChildren<PlaceAtLocation>().Length}");
-    }
-
-    public void AddCurrentPositionAnchor(string name = "Anchor")
-    {
-
-        if (ARLocationProvider.Instance == null)
-        {
+            Debug.LogError("[AnchorManager] ARLocationProvider not found!");
             return;
         }
 
-        var loc = ARLocationProvider.Instance.CurrentLocation;
+        defaultOptions = new PlaceAtLocation.PlaceAtOptions
+        {
+            HideObjectUntilItIsPlaced = true,
+            MaxNumberOfLocationUpdates = 2,
+            MovementSmoothing = defaultSmoothing,
+            UseMovingAverage = true,
+            ShowObjectAfterThisManyUpdates = 2
+        };
+
+        LoadAnchors();
+        SpawnSavedAnchors();
+
+        if (locationProvider.IsEnabled)
+        {
+            locationProvider.ForceLocationUpdate();
+        }
+    }
+
+    public void AddCurrentPositionAnchor(string name = "Метка")
+    {
+        if (locationProvider == null || !locationProvider.IsEnabled)
+        {
+            Debug.LogWarning("[AnchorManager] Location provider not ready!");
+            return;
+        }
+
+        var loc = locationProvider.CurrentLocation;
         var data = new AnchorData
         {
             latitude = loc.latitude,
             longitude = loc.longitude,
-            altitude = loc.altitude,
+            altitude = 0f,
             name = name,
             timestamp = DateTimeOffset.Now.ToUnixTimeSeconds()
         };
 
         anchors.Add(data);
-        anchors.Sort((a, b) => b.timestamp.CompareTo(a.timestamp));
-        if (anchors.Count > maxSavedAnchors)
-        {
-            var removed = anchors[maxSavedAnchors];
-            anchors.RemoveAt(maxSavedAnchors);
-        }
+        anchors.Sort((a, b) => b.timestamp.CompareTo(a.timestamp)); // Новые сверху
+        if (anchors.Count > maxSavedAnchors) anchors.RemoveAt(anchors.Count - 1);
+
         SaveAnchors();
         SpawnAnchor(data);
     }
@@ -74,39 +85,51 @@ public class AnchorManager : MonoBehaviour
     void SpawnSavedAnchors()
     {
         foreach (var a in anchors)
-        {
             SpawnAnchor(a);
-        }
     }
 
     GameObject SpawnAnchor(AnchorData data)
     {
-        var loc = new Location(data.latitude, data.longitude, data.altitude);
+        var loc = new Location(data.latitude, data.longitude, 0f);
+        loc.AltitudeMode = AltitudeMode.GroundRelative;
 
         var instance = PlaceAtLocation.CreatePlacedInstance(anchorPrefab, loc, defaultOptions);
-        instance.SetActive(true);
+
+        var gh = instance.GetComponent<GroundHeight>();
+        if (gh != null)
+        {
+            gh.Settings.Altitude = 0f;
+            gh.Settings.DisableUpdate = false;
+            gh.Settings.Smoothing = defaultSmoothing;
+            gh.Settings.Precision = 0.01f;
+            gh.UpdateObjectHeight(true);
+        }
+
         instance.name = data.name;
-
-        instance.AddComponent<ARAnchor>();
-
+        Debug.Log($"[AnchorManager] Spawned anchor: {data.name} at {loc}");
         return instance;
     }
 
     void SaveAnchors()
     {
         var serial = new SerializableList { list = anchors };
-        string json = JsonUtility.ToJson(serial, true);
+        string json = JsonUtility.ToJson(serial);
         PlayerPrefs.SetString("saved_anchors", json);
         PlayerPrefs.Save();
+        Debug.Log($"[AnchorManager] Saved {anchors.Count} anchors");
     }
 
     void LoadAnchors()
     {
-
         if (PlayerPrefs.HasKey("saved_anchors"))
         {
             string json = PlayerPrefs.GetString("saved_anchors");
-            anchors = JsonUtility.FromJson<SerializableList>(json).list;
+            anchors = JsonUtility.FromJson<SerializableList>(json).list ?? new List<AnchorData>();
+            Debug.Log($"[AnchorManager] Loaded {anchors.Count} anchors");
+        }
+        else
+        {
+            anchors = new List<AnchorData>();
         }
     }
 
