@@ -5,7 +5,7 @@ using UnityEngine.Events;
 public class DistanceCulling : MonoBehaviour
 {
     [Header("Culling Settings")]
-    public float maxDistance = 200f; // метров, в пределах которых метка видима
+    public float maxDistance = 200f;
 
     private PlaceAtLocation placeAt;
     private bool isVisible = true;

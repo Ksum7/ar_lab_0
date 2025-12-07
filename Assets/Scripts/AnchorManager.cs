@@ -1,66 +1,117 @@
-using System.Collections.Generic;
-using UnityEngine;
-using ARLocation;
 using System;
-using UnityEngine.Events;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using ARLocation;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
-[System.Serializable]
-public class AnchorData
-{
-    public double latitude;
-    public double longitude;
-    public float altitude = 0f; // Игнорируем raw GPS altitude
-    public string name;
-    public long timestamp;
-}
-
-[System.Serializable]
-public class SerializableList { public List<AnchorData> list = new List<AnchorData>(); }
-
+[RequireComponent(typeof(ARLocationProvider))]
 public class AnchorManager : MonoBehaviour
 {
-    [Header("Settings")]
     public GameObject anchorPrefab;
-    public int maxSavedAnchors = 10;
-    public float defaultSmoothing = 0.1f;
+    [Min(1)] public int maxSavedAnchors = 10;
+    [Range(0f, 1f)] public float defaultSmoothing = 0.1f;
+
+    public TMP_Text logText;
+    public Image compassArrow;
+    public GameObject anchorUIPrefab;
+    public GameObject infoPopup;
+    public TMP_Text infoPopupText;
 
     private List<AnchorData> anchors = new List<AnchorData>();
-    private PlaceAtLocation.PlaceAtOptions defaultOptions;
+    private readonly string PlayerPrefsKey = "saved_anchors_v3";
     private ARLocationProvider locationProvider;
+    private PlaceAtLocation.PlaceAtOptions placeOptions;
+    private Camera arCamera;
 
-    void Start()
+    private readonly Dictionary<GameObject, GameObject> anchorToUI = new();
+
+    private void Awake()
     {
         locationProvider = ARLocationProvider.Instance;
-        if (locationProvider == null)
+        arCamera = Camera.main;
+
+        if (!locationProvider) { Log("ARLocationProvider не найден!"); enabled = false; return; }
+        if (!arCamera) { Log("Главная камера не найдена!"); enabled = false; return; }
+
+        InitializePlaceOptions();
+        SetupUI();
+    }
+
+    private void Start()
+    {
+        Log("Инициализация GPS...");
+        LoadAnchors();
+
+        if (anchors.Count > 0)
         {
-            Debug.LogError("[AnchorManager] ARLocationProvider not found!");
-            return;
+            Log($"Загружено якорей: {anchors.Count}. Ожидание GPS...");
+        }
+        else
+        {
+            Log("Нет сохранённых якорей. Коснитесь экрана, чтобы добавить.");
         }
 
-        defaultOptions = new PlaceAtLocation.PlaceAtOptions
+        SpawnSavedAnchors();
+    }
+
+    private void SpawnSavedAnchors()
+    {
+        foreach (var a in anchors)
+            SpawnAnchor(a);
+    }
+
+    private void InitializePlaceOptions()
+    {
+        placeOptions = new PlaceAtLocation.PlaceAtOptions
         {
             HideObjectUntilItIsPlaced = true,
             MaxNumberOfLocationUpdates = 2,
             MovementSmoothing = defaultSmoothing,
             UseMovingAverage = true,
-            ShowObjectAfterThisManyUpdates = 2
+            ShowObjectAfterThisManyUpdates = 0
         };
+    }
 
-        LoadAnchors();
-        SpawnSavedAnchors();
+    private void SetupUI()
+    {
+        if (compassArrow) compassArrow.gameObject.SetActive(false);
+        if (infoPopup) infoPopup.SetActive(false);
+    }
 
-        if (locationProvider.IsEnabled)
+    private void Update()
+    {
+        HandleTouchInput();
+        UpdateCompassArrow();
+    }
+
+    private void HandleTouchInput()
+    {
+        if (Touchscreen.current == null) return;
+
+        foreach (var touch in Touchscreen.current.touches)
         {
-            locationProvider.ForceLocationUpdate();
+            if (touch.press.wasPressedThisFrame)
+            {
+                int touchId = touch.touchId.ReadValue();
+
+                if (EventSystem.current.IsPointerOverGameObject(touchId))
+                    return;
+
+                AddCurrentPositionAnchor($"Якорь {DateTime.Now:HH:mm:ss}");
+                break;
+            }
         }
     }
 
-    public void AddCurrentPositionAnchor(string name = "Метка")
+    public void AddCurrentPositionAnchor(string name = "Якорь")
     {
-        if (locationProvider == null || !locationProvider.IsEnabled)
+        if (!IsLocationReady())
         {
-            Debug.LogWarning("[AnchorManager] Location provider not ready!");
+            Log("GPS ещё не готов...");
             return;
         }
 
@@ -70,33 +121,30 @@ public class AnchorManager : MonoBehaviour
             latitude = loc.latitude,
             longitude = loc.longitude,
             altitude = 0f,
-            name = name,
+            name = string.IsNullOrWhiteSpace(name) ? "Якорь" : name.Trim(),
             timestamp = DateTimeOffset.Now.ToUnixTimeSeconds()
         };
 
         anchors.Add(data);
-        anchors.Sort((a, b) => b.timestamp.CompareTo(a.timestamp)); // Новые сверху
-        if (anchors.Count > maxSavedAnchors) anchors.RemoveAt(anchors.Count - 1);
+        anchors = anchors.OrderByDescending(a => a.timestamp).Take(maxSavedAnchors).ToList();
 
         SaveAnchors();
-        SpawnAnchor(data);
+        var go = SpawnAnchor(data);
+        Log($"Добавлен: {data.name}");
+
+        if (go) ShowAnchorUI(go, data);
     }
 
-    void SpawnSavedAnchors()
+    private GameObject SpawnAnchor(AnchorData data)
     {
-        foreach (var a in anchors)
-            SpawnAnchor(a);
-    }
+        if (!anchorPrefab) { Log("anchorPrefab не назначен!"); return null; }
 
-    GameObject SpawnAnchor(AnchorData data)
-    {
-        var loc = new Location(data.latitude, data.longitude, 0f);
-        loc.AltitudeMode = AltitudeMode.GroundRelative;
-
-        var instance = PlaceAtLocation.CreatePlacedInstance(anchorPrefab, loc, defaultOptions);
+        var location = new Location(data.latitude, data.longitude, 0f) { AltitudeMode = AltitudeMode.GroundRelative };
+        var instance = PlaceAtLocation.CreatePlacedInstance(anchorPrefab, location, placeOptions);
+        instance.name = data.name;
 
         var gh = instance.GetComponent<GroundHeight>();
-        if (gh != null)
+        if (gh)
         {
             gh.Settings.Altitude = 0f;
             gh.Settings.DisableUpdate = false;
@@ -105,43 +153,191 @@ public class AnchorManager : MonoBehaviour
             gh.UpdateObjectHeight(true);
         }
 
-        instance.name = data.name;
-        Debug.Log($"[AnchorManager] Spawned anchor: {data.name} at {loc}");
+        if (anchorUIPrefab)
+        {
+            var ui = Instantiate(anchorUIPrefab, FindObjectOfType<Canvas>().transform);
+            ui.SetActive(false);
+            anchorToUI[instance] = ui;
+
+            var infoBtn = ui.transform.Find("Button_Info")?.GetComponent<Button>();
+            var deleteBtn = ui.transform.Find("Button_Delete")?.GetComponent<Button>();
+
+            if (infoBtn) infoBtn.onClick.RemoveAllListeners();
+            if (deleteBtn) deleteBtn.onClick.RemoveAllListeners();
+
+            if (infoBtn) infoBtn.onClick.AddListener(() => ShowInfoPopup(data));
+            if (deleteBtn) deleteBtn.onClick.AddListener(() => DeleteAnchor(instance, data));
+        }
+        data.gameObject = instance;
         return instance;
     }
 
-    void SaveAnchors()
+    private void ShowAnchorUI(GameObject anchorGo, AnchorData data)
     {
-        var serial = new SerializableList { list = anchors };
-        string json = JsonUtility.ToJson(serial);
-        PlayerPrefs.SetString("saved_anchors", json);
-        PlayerPrefs.Save();
-        Debug.Log($"[AnchorManager] Saved {anchors.Count} anchors");
+        if (!anchorToUI.TryGetValue(anchorGo, out var ui) || !ui) return;
+
+        var screenPos = arCamera.WorldToScreenPoint(anchorGo.transform.position);
+        bool isVisible = screenPos.z > 0 && screenPos.x > 0 && screenPos.x < Screen.width && screenPos.y > 0 && screenPos.y < Screen.height;
+
+        ui.SetActive(isVisible);
+
+        if (isVisible)
+        {
+            var rect = ui.GetComponent<RectTransform>();
+            rect.anchoredPosition = screenPos - new Vector3(Screen.width / 2f, Screen.height / 2f);
+        }
     }
 
-    void LoadAnchors()
+    private void UpdateCompassArrow()
     {
-        if (PlayerPrefs.HasKey("saved_anchors"))
+        if (anchors.Count == 0 || !IsLocationReady() || compassArrow == null || arCamera == null)
         {
-            string json = PlayerPrefs.GetString("saved_anchors");
-            anchors = JsonUtility.FromJson<SerializableList>(json).list ?? new List<AnchorData>();
-            Debug.Log($"[AnchorManager] Loaded {anchors.Count} anchors");
+            compassArrow.gameObject.SetActive(false);
+            return;
+        }
+
+        var currentLocation = locationProvider.CurrentLocation.ToLocation();
+        var cameraPos = arCamera.transform.position;
+
+        GameObject nearestAnchorGo = null;
+        float minDistanceSqr = float.MaxValue;
+        bool anyVisible = false;
+
+        foreach (var anchorData in anchors)
+        {
+            if (anchorData.gameObject == null) continue;
+
+            Vector3 worldPos = anchorData.gameObject.transform.position;
+
+            float distSqr = (worldPos - cameraPos).sqrMagnitude;
+
+            Vector3 screenPos = arCamera.WorldToScreenPoint(worldPos);
+            bool isOnScreen = screenPos.z > 0 &&
+                            screenPos.x >= 0 && screenPos.x <= Screen.width &&
+                            screenPos.y >= 0 && screenPos.y <= Screen.height;
+
+            if (isOnScreen)
+                anyVisible = true;
+
+            if (distSqr < minDistanceSqr)
+            {
+                minDistanceSqr = distSqr;
+                nearestAnchorGo = anchorToUI.Keys.FirstOrDefault(go => go.name == anchorData.name);
+            }
+        }
+
+        if (anyVisible)
+        {
+            compassArrow.gameObject.SetActive(false);
+            return;
+        }
+
+
+        if (nearestAnchorGo != null)
+        {
+            PointCompassArrowAt(nearestAnchorGo.transform.position);
+            compassArrow.gameObject.SetActive(true);
         }
         else
         {
-            anchors = new List<AnchorData>();
+            compassArrow.gameObject.SetActive(false);
         }
     }
 
-    void Update()
+    private void PointCompassArrowAt(Vector3 worldTarget)
     {
-        if (Touchscreen.current != null && Touchscreen.current.touches.Count > 0)
+        Vector3 screenPoint = arCamera.WorldToScreenPoint(worldTarget);
+
+        if (screenPoint.z < 0)
+            screenPoint *= -1;
+
+        Vector2 direction = new Vector2(
+            screenPoint.x - Screen.width / 2f,
+            screenPoint.y - Screen.height / 2f
+        );
+
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+        compassArrow.rectTransform.rotation = Quaternion.Euler(0, 0, angle);
+        compassArrow.rectTransform.rotation = Quaternion.Euler(0, 0, angle);
+    }
+
+    private void LateUpdate()
+    {
+        foreach (var pair in anchorToUI)
         {
-            var touch = Touchscreen.current.touches[0];
-            if (touch.press.wasPressedThisFrame)
-            {
-                AddCurrentPositionAnchor("Anchor " + System.DateTime.Now.ToShortTimeString());
-            }
+            if (pair.Key != null) ShowAnchorUI(pair.Key, GetAnchorData(pair.Key));
+        }
+    }
+
+    private AnchorData GetAnchorData(GameObject go)
+    {
+        return anchors.FirstOrDefault(a => a.name == go.name);
+    }
+
+    private void DeleteAnchor(GameObject go, AnchorData data)
+    {
+        anchors.RemoveAll(a => a.timestamp == data.timestamp);
+        SaveAnchors();
+        if (anchorToUI.TryGetValue(go, out var ui) && ui) Destroy(ui);
+        anchorToUI.Remove(go);
+        Destroy(go);
+        Log($"Удалён якорь: {data.name}");
+    }
+
+    private void ShowInfoPopup(AnchorData data)
+    {
+        if (!infoPopup || !infoPopupText) return;
+
+        var time = DateTimeOffset.FromUnixTimeSeconds(data.timestamp).ToLocalTime();
+        infoPopupText.text =
+            $"<b>{data.name}</b>\n" +
+            $"Широта: {data.latitude:F6}\n" +
+            $"Долгота: {data.longitude:F6}\n" +
+            $"Время: {time:dd.MM.yyyy HH:mm:ss}";
+
+        infoPopup.SetActive(true);
+    }
+
+    private bool IsLocationReady()
+    {
+        return locationProvider?.IsEnabled == true;
+    }
+
+    private void Log(string message)
+    {
+        Debug.Log($"[Anchor] {message}");
+        if (logText) logText.text = message;
+    }
+    private void SaveAnchors()
+    {
+        var wrapper = new SerializableList { list = anchors };
+        PlayerPrefs.SetString(PlayerPrefsKey, JsonUtility.ToJson(wrapper, true));
+        PlayerPrefs.Save();
+    }
+
+    private void LoadAnchors()
+    {
+        if (!PlayerPrefs.HasKey(PlayerPrefsKey))
+        {
+            anchors = new List<AnchorData>();
+            return;
+        }
+
+        try
+        {
+            var wrapper = JsonUtility.FromJson<SerializableList>(PlayerPrefs.GetString(PlayerPrefsKey));
+            anchors = wrapper?.list ?? new List<AnchorData>();
+            anchors = anchors.Where(a => a.latitude != 0 || a.longitude != 0)
+                             .OrderByDescending(a => a.timestamp)
+                             .Take(maxSavedAnchors).ToList();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Ошибка загрузки якорей: " + e.Message);
+            anchors = new List<AnchorData>();
         }
     }
 }
+
+[System.Serializable] public class AnchorData { public double latitude, longitude; public float altitude = 0f; public string name = "Якорь"; public long timestamp; [System.NonSerialized] public GameObject gameObject = null; }
+[System.Serializable] public class SerializableList { public List<AnchorData> list = new List<AnchorData>(); }
