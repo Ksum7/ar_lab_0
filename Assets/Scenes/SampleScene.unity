@@ -1189,8 +1189,6 @@ GameObject:
   - component: {fileID: 1571486781}
   - component: {fileID: 1571486780}
   - component: {fileID: 1571486779}
-  - component: {fileID: 1571486784}
-  - component: {fileID: 1571486785}
   m_Layer: 0
   m_Name: XR Origin (Mobile AR)
   m_TagString: Untagged
@@ -1223,8 +1221,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_PlanePrefab: {fileID: 0}
-  m_DetectionMode: 0
+  m_PlanePrefab: {fileID: 2739416283127694238, guid: 94123490d9f654940ad1ef4d1f9321f6, type: 3}
+  m_DetectionMode: 2
 --- !u!114 &1571486781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1272,59 +1270,6 @@ Transform:
   - {fileID: 1976924000}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1571486784
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1571486778}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fbdb1aae83075134abd3e91e08c50c21, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  anchorPrefab: {fileID: 3073619391709731303, guid: a29bf0bd60a40534daae2aae48197514, type: 3}
-  maxSavedAnchors: 10
-  defaultSmoothing: 0.1
-  logText: {fileID: 1978691154}
-  compassArrow: {fileID: 747335817}
-  anchorUIPrefab: {fileID: 1503874603}
-  infoPopup: {fileID: 1992553078}
-  infoPopupText: {fileID: 1073471946}
---- !u!114 &1571486785
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1571486778}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3cbc4231fbb3b1844a8e5b775e45edf0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  LocationProviderSettings:
-    TimeBetweenUpdates: 2
-    MinDistanceBetweenUpdates: 0
-    AccuracyRadius: 25
-    MaxNumberOfUpdates: 0
-  MockLocationData: {fileID: 0}
-  MaxWaitTime: 200
-  StartUpDelay: 0
-  DebugMode: 0
-  OnEnabled:
-    m_PersistentCalls:
-      m_Calls: []
-  OnLocationUpdated:
-    m_PersistentCalls:
-      m_Calls: []
-  OnRawLocationUpdated:
-    m_PersistentCalls:
-      m_Calls: []
-  OnCompassUpdated:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &1624105737
 GameObject:
   m_ObjectHideFlags: 0
@@ -1343,7 +1288,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1624105738
 MonoBehaviour:
   m_ObjectHideFlags: 0
