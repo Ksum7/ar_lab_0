@@ -3,27 +3,75 @@ using UnityEngine.XR.ARFoundation;
 using Unity.Collections;
 using TMPro;
 using System.Collections.Generic;
+using UnityEngine.UI;
+using System;
 
 [RequireComponent(typeof(ARPlane))]
-public class LargestRectangleInPlane : MonoBehaviour
+public class ARPlaneMazeDrawer : MonoBehaviour
 {
-    [Header("Настройки")]
     public float gridStep = 0.05f;
-
     private ARPlane arPlane;
-    private LargestRectVisualizer visualizer;
-    public GameObject visualizerPrefab;
+    public GameObject visualizerInstance;
+
+    public Color lineColor = Color.green;
+    public float lineWidth = 0.02f;
+    public GameObject mazeControllerPrefab;
+    private LineRenderer lineRenderer;
+    public GameObject textObj;
+    public GameObject buttonObj;
+    private int mazeWidth;
+    private int mazeHeight;
 
     private void Awake()
     {
+        // visualizerInstance.transform.localScale = Vector3.one * gridStep;
+
         arPlane = GetComponent<ARPlane>();
+        lineRenderer = visualizerInstance.GetComponent<LineRenderer>();
+        lineRenderer.material = new Material(Shader.Find("Unlit/Color"));
+        lineRenderer.material.color = lineColor;
+        lineRenderer.startWidth = lineRenderer.endWidth = lineWidth;
+        lineRenderer.loop = true;
+        lineRenderer.useWorldSpace = true;
+        lineRenderer.positionCount = 0;
+        buttonObj.GetComponent<Button>().onClick.AddListener(OnStartButtonClicked);
+        buttonObj.SetActive(false);
+    }
 
+    private void OnStartButtonClicked()
+    {
+        if (mazeControllerPrefab == null)
+        {
+            Debug.LogError("MazeController Prefab не назначен в LargestRectVisualizer!");
+            return;
+        }
 
-        GameObject visualizerInstance = Instantiate(visualizerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(90f, 0f, 90f));
-        visualizerInstance.transform.SetParent(transform, false);
+        GameObject mazeInstance = Instantiate(mazeControllerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(0f, 0f, 0f));
+        mazeInstance.transform.SetParent(transform, false);
+        mazeInstance.transform.localScale = Vector3.one * gridStep;
+        MazeController controller = mazeInstance.GetComponent<MazeController>();
 
-        visualizer = visualizerInstance.GetComponent<LargestRectVisualizer>();
-        visualizer.Initialize();
+        controller?.Initialize(mazeWidth, mazeHeight);
+        var planeManager = FindObjectOfType<ARPlaneManager>();
+        if (planeManager) planeManager.enabled = false;
+
+        Hide();
+    }
+
+    public void Hide()
+    {
+        if (buttonObj != null) buttonObj.SetActive(false);
+        visualizerInstance.SetActive(false);
+    }
+
+    public void Show(Vector3[] corners)
+    {
+        lineRenderer.positionCount = corners.Length;
+        lineRenderer.SetPositions(corners);
+        textObj.GetComponent<TextMeshProUGUI>().text = $"{mazeWidth} × {mazeHeight}";
+
+        buttonObj.SetActive(true);
+        visualizerInstance.SetActive(true);
     }
 
     private void OnEnable() => arPlane.boundaryChanged += OnBoundaryChanged;
@@ -36,7 +84,7 @@ public class LargestRectangleInPlane : MonoBehaviour
         var boundary = arPlane.boundary;
         if (!boundary.IsCreated || boundary.Length < 3)
         {
-            visualizer.Hide();
+            Hide();
             return;
         }
 
@@ -44,7 +92,7 @@ public class LargestRectangleInPlane : MonoBehaviour
 
         if (rect.width * rect.height < 0.01f)
         {
-            visualizer.Hide();
+            Hide();
             return;
         }
 
@@ -55,7 +103,10 @@ public class LargestRectangleInPlane : MonoBehaviour
         corners[3] = arPlane.transform.TransformPoint(rect.xMin, 0f, rect.yMin);
         corners[4] = corners[0];
 
-        visualizer.Show(corners, Mathf.RoundToInt(rect.width / gridStep), Mathf.RoundToInt(rect.height / gridStep));
+        mazeWidth = Mathf.RoundToInt(rect.width / gridStep);
+        mazeHeight = Mathf.RoundToInt(rect.height / gridStep);
+
+        Show(corners);
     }
 
     private Rect FindLargestAxisAlignedRectangle(ARPlane plane, float step)
