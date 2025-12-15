@@ -22,10 +22,14 @@ public class ARPlaneMazeDrawer : MonoBehaviour
     private int mazeWidth;
     private int mazeHeight;
     private ARPlaneManager planeManager;
+    private GameManager gameManager;
+    private Camera arCamera;
 
     private void Awake()
     {
+        arCamera = Camera.main;
         planeManager = FindObjectOfType<ARPlaneManager>();
+        gameManager = FindObjectOfType<GameManager>();
 
         arPlane = GetComponent<ARPlane>();
         lineRenderer = visualizerInstance.GetComponent<LineRenderer>();
@@ -46,9 +50,9 @@ public class ARPlaneMazeDrawer : MonoBehaviour
             Debug.LogError("MazeController Prefab не назначен в LargestRectVisualizer!");
             return;
         }
-
-        GameObject mazeInstance = Instantiate(mazeControllerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(90f, 0f, 90f));
+        GameObject mazeInstance = Instantiate(mazeControllerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(0f, 0f, 0f));
         mazeInstance.transform.SetParent(transform, false);
+        mazeInstance.transform.rotation = visualizerInstance.transform.rotation;
         mazeInstance.transform.localScale = Vector3.one * gridStep;
         MazeController controller = mazeInstance.GetComponent<MazeController>();
 
@@ -56,11 +60,23 @@ public class ARPlaneMazeDrawer : MonoBehaviour
         if (planeManager) planeManager.enabled = false;
 
         Hide();
+        gameManager.OnGameStart();
     }
 
     public void Update()
     {
         if (planeManager && !planeManager.enabled) Hide();
+
+        Vector3 toCamera = arCamera.transform.position - arPlane.center;
+        Vector3 candidateNormal = arPlane.normal;
+
+        if (Vector3.Dot(candidateNormal, toCamera) < 0)
+        {
+            candidateNormal = -candidateNormal;
+        }
+
+        visualizerInstance.transform.rotation = Quaternion.LookRotation(candidateNormal, Vector3.up);
+        visualizerInstance.transform.rotation *= Quaternion.Euler(180f, 0f, 180f);
     }
 
     public void Hide()
@@ -205,4 +221,3 @@ public class ARPlaneMazeDrawer : MonoBehaviour
         return inside;
     }
 }
-

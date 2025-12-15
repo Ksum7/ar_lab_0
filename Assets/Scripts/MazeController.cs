@@ -1,6 +1,8 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(SpriteRenderer))]
 public class MazeController : MonoBehaviour
@@ -40,7 +42,24 @@ public class MazeController : MonoBehaviour
         Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left
     };
     private int score = 0;
-    private bool gameEnded = false;
+    private GameManager gameManager;
+
+    private ARPlaneManager planeManager;
+
+    private Vector2 touchStartPos;
+    private Vector2 touchEndPos;
+    private bool isSwiping = false;
+    public float minSwipeDistance = 50f;
+
+    private void Awake()
+    {
+        gameManager = FindObjectOfType<GameManager>();
+        planeManager = FindObjectOfType<ARPlaneManager>();
+        gameObject.AddComponent<BoxCollider>();
+        BoxCollider collider = GetComponent<BoxCollider>();
+        collider.size = new Vector3(width, 0.1f, height);
+        collider.center = Vector3.zero;
+    }
 
     public void Initialize(int w, int h)
     {
@@ -53,32 +72,70 @@ public class MazeController : MonoBehaviour
 
     void Update()
     {
-        if (gameEnded) return;
-
         Vector2Int inputDir = Vector2Int.zero;
 
-        if (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.UpArrow)) inputDir = Vector2Int.up;
-        if (Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.DownArrow)) inputDir = Vector2Int.down;
-        if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftArrow)) inputDir = Vector2Int.left;
-        if (Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.RightArrow)) inputDir = Vector2Int.right;
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.upArrowKey.wasPressedThisFrame || Keyboard.current.iKey.wasPressedThisFrame)
+                inputDir = Vector2Int.up;
+            else if (Keyboard.current.downArrowKey.wasPressedThisFrame || Keyboard.current.kKey.wasPressedThisFrame)
+                inputDir = Vector2Int.down;
+            else if (Keyboard.current.leftArrowKey.wasPressedThisFrame || Keyboard.current.jKey.wasPressedThisFrame)
+                inputDir = Vector2Int.left;
+            else if (Keyboard.current.rightArrowKey.wasPressedThisFrame || Keyboard.current.lKey.wasPressedThisFrame)
+                inputDir = Vector2Int.right;
+        }
+
+        if (Touchscreen.current != null && Touchscreen.current.touches.Count > 0)
+        {
+            var touch = Touchscreen.current.primaryTouch;
+
+            if (touch.press.wasPressedThisFrame)
+            {
+                touchStartPos = touch.position.ReadValue();
+                isSwiping = true;
+            }
+
+            if (touch.press.wasReleasedThisFrame && isSwiping)
+            {
+                Vector2 touchEndPos = touch.position.ReadValue();
+                Vector2 delta = touchEndPos - touchStartPos;
+                float distance = delta.magnitude;
+
+                if (distance > minSwipeDistance)
+                {
+                    inputDir = GetSwipeDirection(delta);
+                }
+
+                isSwiping = false;
+            }
+        }
 
         if (inputDir != Vector2Int.zero && moveCoroutine == null)
         {
-            int dirIndex = System.Array.IndexOf(directions, inputDir);
-            if (dirIndex >= 0)
+            Vector2Int targetCell = playerCell + inputDir;
+            if (CanMoveTo(playerCell, targetCell))
             {
-                Vector2Int targetCell = playerCell + inputDir;
-                if (CanMoveTo(playerCell, targetCell))
-                {
-                    moveCoroutine = StartCoroutine(MovePlayerSmooth(targetCell));
-                    targetCell = playerCell + inputDir;
-                }
-                while (CanMoveTo(playerCell, targetCell) && !HasSidePath(playerCell, inputDir))
-                {
-                    moveCoroutine = StartCoroutine(MovePlayerSmooth(targetCell));
-                    targetCell = playerCell + inputDir;
-                }
+                moveCoroutine = StartCoroutine(MovePlayerSmooth(targetCell));
+                targetCell = playerCell + inputDir;
             }
+            while (CanMoveTo(playerCell, targetCell) && !HasSidePath(playerCell, inputDir))
+            {
+                moveCoroutine = StartCoroutine(MovePlayerSmooth(targetCell));
+                targetCell = playerCell + inputDir;
+            }
+        }
+    }
+
+    private Vector2Int GetSwipeDirection(Vector2 delta)
+    {
+        if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
+        {
+            return delta.x > 0 ? Vector2Int.right : Vector2Int.left;
+        }
+        else
+        {
+            return delta.y > 0 ? Vector2Int.up : Vector2Int.down;
         }
     }
 
@@ -95,7 +152,6 @@ public class MazeController : MonoBehaviour
 
     public void GenerateMazeAndPlayer()
     {
-        gameEnded = false;
         score = 0;
 
         if (moveCoroutine != null)
@@ -104,7 +160,6 @@ public class MazeController : MonoBehaviour
             moveCoroutine = null;
         }
 
-        // Удаляем старые объекты
         if (playerObject) Destroy(playerObject);
         if (exitObject) Destroy(exitObject);
         foreach (var t in treasureObjects) if (t) Destroy(t);
@@ -325,17 +380,23 @@ public class MazeController : MonoBehaviour
 
     void EndGame()
     {
-        if (gameEnded) return;
-        gameEnded = true;
 
         int exitBonus = width * height;
         score += exitBonus;
 
         long finalScore = (long)score * score;
         Debug.Log($"=== ИГРА ЗАВЕРШЕНА ===\nОчки: {score} (сокровища: {score - exitBonus}, бонус выхода: {exitBonus})\nФинальный результат: {finalScore}");
+
+        gameManager.OnGameEnd(score, width, height);
     }
 
     float EaseOutCubic(float t) => 1f - Mathf.Pow(1f - t, 3f);
+
+    public void CloseMaze()
+    {
+        if (planeManager) planeManager.enabled = true;
+        Destroy(gameObject);
+    }
 }
 
 public static class Texture2DExtensions
