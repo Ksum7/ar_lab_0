@@ -21,10 +21,11 @@ public class ARPlaneMazeDrawer : MonoBehaviour
     public GameObject buttonObj;
     private int mazeWidth;
     private int mazeHeight;
+    private ARPlaneManager planeManager;
 
     private void Awake()
     {
-        // visualizerInstance.transform.localScale = Vector3.one * gridStep;
+        planeManager = FindObjectOfType<ARPlaneManager>();
 
         arPlane = GetComponent<ARPlane>();
         lineRenderer = visualizerInstance.GetComponent<LineRenderer>();
@@ -46,16 +47,20 @@ public class ARPlaneMazeDrawer : MonoBehaviour
             return;
         }
 
-        GameObject mazeInstance = Instantiate(mazeControllerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(0f, 0f, 0f));
+        GameObject mazeInstance = Instantiate(mazeControllerPrefab, new Vector3(0f, 0.005f, 0f), Quaternion.Euler(90f, 0f, 90f));
         mazeInstance.transform.SetParent(transform, false);
         mazeInstance.transform.localScale = Vector3.one * gridStep;
         MazeController controller = mazeInstance.GetComponent<MazeController>();
 
         controller?.Initialize(mazeWidth, mazeHeight);
-        var planeManager = FindObjectOfType<ARPlaneManager>();
         if (planeManager) planeManager.enabled = false;
 
         Hide();
+    }
+
+    public void Update()
+    {
+        if (planeManager && !planeManager.enabled) Hide();
     }
 
     public void Hide()
