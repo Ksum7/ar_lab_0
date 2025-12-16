@@ -13,9 +13,8 @@ public class GameManager : MonoBehaviour
     public GameObject pausePanel;
     public GameObject gameOverPanel;
 
-    [Header("Stats Text (единственное поле)")]
-    public TextMeshProUGUI statsText; // Одно текстовое поле для всей статистики
-
+    [Header("Stats Text")]
+    public TextMeshProUGUI statsText;
     [Header("Game Over Text")]
     public TextMeshProUGUI gameScoreText;
 
@@ -28,7 +27,7 @@ public class GameManager : MonoBehaviour
     public Button pauseButton; // In-game pause (top-left)
     public Button resumeButton; // Pause resume
     public Button toMainFromPauseButton; // Pause to main
-    public Button resumeFromGameOverButton; // Game over to main
+    public Button resumeFromGameOverButton; // Resume from game over
     public Button mazeCloseButton; // Close maze button
 
     private int highScore = 0;
@@ -51,7 +50,6 @@ public class GameManager : MonoBehaviour
 
         LoadStats();
 
-        // Setup button listeners
         startButton.onClick.AddListener(OnStart);
         statsButton.onClick.AddListener(OnStats);
         exitButton.onClick.AddListener(OnExit);
@@ -63,7 +61,6 @@ public class GameManager : MonoBehaviour
         resumeFromGameOverButton.onClick.AddListener(ResumeFromGameOver);
         mazeCloseButton.onClick.AddListener(OnMazeCloseButtonClicked);
 
-        // Initial state
         MainMenu();
         mazeCloseButton.gameObject.SetActive(false);
     }
@@ -75,7 +72,7 @@ public class GameManager : MonoBehaviour
         largestField = PlayerPrefs.GetInt("LargestField", 0);
         maxTreasures = PlayerPrefs.GetInt("MaxTreasures", 0);
 
-        UpdateStatsText(); // Обновляем текст сразу после загрузки
+        UpdateStatsText();
     }
 
     private void SaveStats()
@@ -92,10 +89,10 @@ public class GameManager : MonoBehaviour
         if (statsText != null)
         {
             statsText.text =
-                $"<b>Рекорд:</b> {highScore}\n" +
-                $"<b>Всего очков:</b> {totalScore}\n" +
-                $"<b>Самое большое поле:</b> {largestField} клеток\n" +
-                $"<b>Макс. сокровищ за игру:</b> {maxTreasures}";
+                $"<b><color=#000080>Рекорд:</color></b> <color=#D2691E><size=120%>{highScore}</size></color>\n" +
+                $"<b><color=#2F4F4F>Всего очков:</color></b> <color=#006400>{totalScore}</color>\n" +
+                $"<b><color=#2F4F4F>Самое большое поле:</color></b> <color=#228B22>{largestField} клеток</color>\n" +
+                $"<b><color=#2F4F4F>Макс. сокровищ за игру:</color></b> <color=#B8860B>{maxTreasures}</color>";
         }
     }
 
@@ -122,7 +119,7 @@ public class GameManager : MonoBehaviour
     {
         mainMenuPanel.SetActive(false);
         statsPanel.SetActive(true);
-        UpdateStatsText(); // Обновляем при открытии статистики
+        UpdateStatsText();
     }
 
     private void OnReset()
@@ -145,14 +142,14 @@ public class GameManager : MonoBehaviour
         pauseButton.gameObject.SetActive(false);
         Time.timeScale = 0f;
         pausePanel.SetActive(true);
-        if (arCameraManager != null)
-        {
-            arCameraManager.enabled = false;
-        }
-        if (arSession != null)
-        {
-            arSession.gameObject.SetActive(false);
-        }
+        // if (arCameraManager != null)
+        // {
+        //     arCameraManager.enabled = false;
+        // }
+        // if (arSession != null)
+        // {
+        //     arSession.gameObject.SetActive(false);
+        // }
     }
 
     private void OnResume()
@@ -160,14 +157,14 @@ public class GameManager : MonoBehaviour
         pauseButton.gameObject.SetActive(true);
         Time.timeScale = 1f;
         pausePanel.SetActive(false);
-        if (arCameraManager != null)
-        {
-            arCameraManager.enabled = true;
-        }
-        if (arSession != null)
-        {
-            arSession.gameObject.SetActive(true);
-        }
+        // if (arCameraManager != null)
+        // {
+        //     arCameraManager.enabled = true;
+        // }
+        // if (arSession != null)
+        // {
+        //     arSession.gameObject.SetActive(true);
+        // }
     }
 
     private void ToMainMenu()
@@ -215,20 +212,59 @@ public class GameManager : MonoBehaviour
         int collected = (score - fieldSize) / 5;
         long finalScore = (long)score * score;
 
-        if ((int)finalScore > highScore) highScore = (int)finalScore;
+        bool isNewRecord = (int)finalScore > highScore;
+
+        if (isNewRecord)
+        {
+            highScore = (int)finalScore;
+        }
+
         totalScore += finalScore;
         if (fieldSize > largestField) largestField = fieldSize;
         if (collected > maxTreasures) maxTreasures = collected;
 
         SaveStats();
-        UpdateStatsText(); // Обновляем статистику после завершения игры
+        UpdateStatsText();
 
-        gameScoreText.text = finalScore.ToString();
+        string message = "";
+
+        if (isNewRecord)
+        {
+            message += $"<color=#FF8C00><size=150%><b>🎉 НОВЫЙ РЕКОРД! 🎉</b></size></color>\n\n";
+            message += $"<b>Ваш результат:</b> <color=#D2691E><size=130%>{finalScore}</size></color>\n\n";
+        }
+        else
+        {
+            message += $"<b>Игра завершена!</b>\n";
+            message += $"<b>Ваш результат:</b> <color=#006400><size=130%>{finalScore}</size></color>\n\n";
+        }
+
+        message += $"<b>Собрано сокровищ:</b> <color=#2F4F4F>{collected}</color>\n";
+
+        if (collected == maxTreasures && collected > 0)
+        {
+            message += "<color=#228B22><b>Это ваш лучший результат по сокровищам!</b></color>\n";
+        }
+
+        message += $"<b>Размер лабиринта:</b> <color=#2F4F4F>{w} × {h} = {fieldSize} клеток</color>\n";
+
+        if (fieldSize == largestField)
+        {
+            message += "<color=#228B22><b>Самый большой лабиринт, который вы прошли!</b></color>\n";
+        }
+
+        message += "\n<b>Текущая статистика:</b>\n";
+        message += $"• Рекорд: <b><color=#000080>{highScore}</color></b>\n";
+        message += $"• Всего очков: <b><color=#2F4F4F>{totalScore}</color></b>\n";
+        message += $"• Самое большое поле: <b><color=#2F4F4F>{largestField}</color></b> клеток\n";
+        message += $"• Максимум сокровищ за игру: <b><color=#228B22>{maxTreasures}</color></b>";
+
+        gameScoreText.text = message;
+
         gameOverPanel.SetActive(true);
         pauseButton.gameObject.SetActive(false);
         mazeCloseButton.gameObject.SetActive(false);
     }
-
     private void OnMazeCloseButtonClicked()
     {
         MazeController mazeController = FindObjectOfType<MazeController>();
